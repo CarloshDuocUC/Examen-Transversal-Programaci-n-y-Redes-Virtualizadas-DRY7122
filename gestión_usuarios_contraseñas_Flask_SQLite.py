@@ -69,4 +69,15 @@ if __name__ == '__main__':
     if not os.path.exists("clave.key"):
         generar_clave()
     crear_base_datos()
+
+    # Agregar usuarios iniciales
+    usuarios_iniciales = [
+        ("Sebastian Aviles", "cisco"),
+        ("Salomon Vergara", "cisco"),
+        ("Carlos Hernández", "cisco")
+    ]
+
+    for nombre, contraseña in usuarios_iniciales:
+        insertar_usuario(nombre, contraseña)
+
     app.run(host='0.0.0.0', port=5800)
