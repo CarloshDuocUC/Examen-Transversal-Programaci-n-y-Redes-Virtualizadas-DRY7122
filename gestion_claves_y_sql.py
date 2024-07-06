@@ -1,6 +1,10 @@
 from cryptography.fernet import Fernet
+from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
-import os
+from flask import Flask, request, jsonify
+import os 
+
+app = Flask(__name__)
 
 # Función para generar una clave y guardarla en un archivo
 def generar_clave():
@@ -12,60 +16,57 @@ def generar_clave():
 def cargar_clave():
     return open("clave.key", "rb").read()
 
-# Función para encriptar un mensaje
-def encriptar_mensaje(mensaje):
-    clave = cargar_clave()
-    fernet = Fernet(clave)
-    mensaje_encriptado = fernet.encrypt(mensaje.encode())
-    return mensaje_encriptado
-
-# Función para desencriptar un mensaje
-def desencriptar_mensaje(mensaje_encriptado):
-    clave = cargar_clave()
-    fernet = Fernet(clave)
-    mensaje_desencriptado = fernet.decrypt(mensaje_encriptado).decode()
-    return mensaje_desencriptado
-
-# Función para crear una base de datos y una tabla
+# Crear la base de datos y la tabla si no existe
 def crear_base_datos():
-    conexion = sqlite3.connect('datos.db')
+    conexion = sqlite3.connect('usuarios.db')
     cursor = conexion.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios
-                     (id INTEGER PRIMARY KEY, nombre TEXT, mensaje_encriptado TEXT)''')
+                     (id INTEGER PRIMARY KEY, nombre TEXT, contraseña_hash TEXT)''')
     conexion.commit()
     conexion.close()
 
 # Función para insertar un usuario en la base de datos
-def insertar_usuario(nombre, mensaje):
-    conexion = sqlite3.connect('datos.db')
+def insertar_usuario(nombre, contraseña):
+    conexion = sqlite3.connect('usuarios.db')
     cursor = conexion.cursor()
-    mensaje_encriptado = encriptar_mensaje(mensaje)
-    cursor.execute("INSERT INTO usuarios (nombre, mensaje_encriptado) VALUES (?, ?)",
-                   (nombre, mensaje_encriptado))
+    contraseña_hash = generate_password_hash(contraseña)
+    cursor.execute("INSERT INTO usuarios (nombre, contraseña_hash) VALUES (?, ?)",
+                   (nombre, contraseña_hash))
     conexion.commit()
     conexion.close()
 
-# Función para obtener y desencriptar mensajes de la base de datos
-def obtener_mensajes():
-    conexion = sqlite3.connect('datos.db')
+# Función para validar un usuario
+def validar_usuario(nombre, contraseña):
+    conexion = sqlite3.connect('usuarios.db')
     cursor = conexion.cursor()
-    cursor.execute("SELECT nombre, mensaje_encriptado FROM usuarios")
-    filas = cursor.fetchall()
-    for fila in filas:
-        nombre, mensaje_encriptado = fila
-        mensaje_desencriptado = desencriptar_mensaje(mensaje_encriptado)
-        print(f"Nombre: {nombre}, Mensaje: {mensaje_desencriptado}")
+    cursor.execute("SELECT contraseña_hash FROM usuarios WHERE nombre=?", (nombre,))
+    fila = cursor.fetchone()
     conexion.close()
+    if fila is None:
+        return False
+    contraseña_hash = fila[0]
+    return check_password_hash(contraseña_hash, contraseña)
 
-# Generar y guardar una clave si no existe
-if not os.path.exists("clave.key"):
-    generar_clave()
+@app.route('/registrar', methods=['POST'])
+def registrar():
+    data = request.get_json()
+    nombre = data.get('nombre')
+    contraseña = data.get('contraseña')
+    insertar_usuario(nombre, contraseña)
+    return jsonify({"mensaje": "Usuario registrado exitosamente"})
 
-# Crear la base de datos y la tabla si no existe
-crear_base_datos()
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    nombre = data.get('nombre')
+    contraseña = data.get('contraseña')
+    if validar_usuario(nombre, contraseña):
+        return jsonify({"mensaje": "Inicio de sesión exitoso"})
+    else:
+        return jsonify({"mensaje": "Nombre de usuario o contraseña incorrectos"}), 401
 
-# Insertar un usuario y su mensaje encriptado
-insertar_usuario("Carlos", "Este es un mensaje secreto")
-
-# Obtener y mostrar los mensajes desencriptados
-obtener_mensajes()
+if __name__ == '__main__':
+    if not os.path.exists("clave.key"):
+        generar_clave()
+    crear_base_datos()
+    app.run(host='0.0.0.0', port=5800)
